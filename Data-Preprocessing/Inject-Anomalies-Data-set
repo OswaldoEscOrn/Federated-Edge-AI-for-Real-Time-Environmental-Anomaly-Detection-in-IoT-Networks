@@ -1,0 +1,151 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+# ────────────────────────────────────────────────────────────────
+# Configuration - tune these to control anomaly difficulty / density
+# ────────────────────────────────────────────────────────────────
+INPUT_FILE = "combined_environmental_data.csv"
+OUTPUT_FILE = "combined_with_injected_anomalies.csv"
+
+# How many anomalies to inject (total across all types)
+NUM_ANOMALIES = 1200  # ~3–4% of 35k rows → challenging but realistic
+
+# Anomaly types proportions (sum to 1.0)
+PROP_POLLUTION_ONLY = 0.40
+PROP_NOISE_ONLY = 0.35
+PROP_CORRELATED = 0.25
+
+# Magnitude & duration ranges (adjust realism)
+PM25_SPIKE_MEAN = 80  # μg/m³ - strong pollution event
+PM25_SPIKE_STD = 25
+NOISE_DURATION_MULT = 5.0  # × normal value
+NOISE_COUNT_MULT = 4.0
+NOISE_SALIENCE_MULT = 3.5
+
+# Duration of each anomaly (in hours)
+ANOMALY_DURATION_MEAN = 4
+ANOMALY_DURATION_STD = 2.5
+
+# Visualization
+PLOT_BEFORE_AFTER = True
+PLOT_DAYS = 14  # zoom into first N days after injection
+
+# ────────────────────────────────────────────────────────────────
+# 1. Load original data
+# ────────────────────────────────────────────────────────────────
+print("Loading original dataset...")
+df = pd.read_csv(INPUT_FILE, index_col=0, parse_dates=True)
+print(f"Original shape: {df.shape}")
+print("Columns:", df.columns.tolist())
+
+# Ensure numeric and no NaNs
+numeric_cols = ['avg_PM2.5', 'avg_PM2.5_normalized', 'total_noise_duration',
+                'noise_event_count', 'avg_salience']
+df[numeric_cols] = df[numeric_cols].astype(float).fillna(0)
+
+
+# ────────────────────────────────────────────────────────────────
+# 2. Helper: inject one anomaly block at random position
+# ────────────────────────────────────────────────────────────────
+def inject_anomaly_block(df, start_idx, duration_hours, pm25_mult=1.0, noise_mult=1.0):
+    end_idx = min(start_idx + duration_hours, len(df))
+    slice_ = df.iloc[start_idx:end_idx]
+
+    # Apply multipliers (higher = stronger anomaly)
+    if pm25_mult > 1.0:
+        df.iloc[start_idx:end_idx, df.columns.get_loc('avg_PM2.5')] *= pm25_mult
+        df.iloc[start_idx:end_idx, df.columns.get_loc('avg_PM2.5_normalized')] *= pm25_mult
+
+    if noise_mult > 1.0:
+        for col in ['total_noise_duration', 'noise_event_count', 'avg_salience']:
+            df.iloc[start_idx:end_idx, df.columns.get_loc(col)] *= noise_mult
+
+    return df
+
+
+# ────────────────────────────────────────────────────────────────
+# 3. Generate anomaly locations & types
+# ────────────────────────────────────────────────────────────────
+np.random.seed(42)  # for reproducibility
+
+n_total = len(df)
+anomaly_starts = np.random.choice(n_total, size=NUM_ANOMALIES, replace=False)
+np.random.shuffle(anomaly_starts)  # randomize order
+
+durations = np.random.normal(ANOMALY_DURATION_MEAN, ANOMALY_DURATION_STD, NUM_ANOMALIES)
+durations = np.clip(durations, 1, 12).astype(int)  # 1–12 hours
+
+# Assign types
+type_counts = {
+    'pollution': int(NUM_ANOMALIES * PROP_POLLUTION_ONLY),
+    'noise': int(NUM_ANOMALIES * PROP_NOISE_ONLY),
+    'correlated': int(NUM_ANOMALIES * PROP_CORRELATED)
+}
+types = (['pollution'] * type_counts['pollution'] +
+         ['noise'] * type_counts['noise'] +
+         ['correlated'] * type_counts['correlated'])
+np.random.shuffle(types)
+
+print(f"Injecting {NUM_ANOMALIES} anomalies: "
+      f"{type_counts['pollution']} pollution-only, "
+      f"{type_counts['noise']} noise-only, "
+      f"{type_counts['correlated']} correlated")
+
+# ────────────────────────────────────────────────────────────────
+# 4. Inject anomalies
+# ────────────────────────────────────────────────────────────────
+df_injected = df.copy()
+
+for i, start_idx in enumerate(anomaly_starts):
+    duration = durations[i]
+    anomaly_type = types[i]
+
+    if anomaly_type == 'pollution':
+        pm_mult = np.random.normal(PM25_SPIKE_MEAN / df['avg_PM2.5'].mean(), PM25_SPIKE_STD / df['avg_PM2.5'].mean())
+        noise_mult = 1.0
+    elif anomaly_type == 'noise':
+        pm_mult = 1.0
+        noise_mult = np.random.uniform(NOISE_DURATION_MULT * 0.7, NOISE_DURATION_MULT * 1.3)
+    else:  # correlated
+        pm_mult = np.random.normal(PM25_SPIKE_MEAN / df['avg_PM2.5'].mean(), PM25_SPIKE_STD / df['avg_PM2.5'].mean())
+        noise_mult = np.random.uniform(NOISE_DURATION_MULT * 0.8, NOISE_DURATION_MULT * 1.5)
+
+    df_injected = inject_anomaly_block(df_injected, start_idx, duration, pm_mult, noise_mult)
+
+# ────────────────────────────────────────────────────────────────
+# 5. Save new dataset
+# ────────────────────────────────────────────────────────────────
+df_injected.to_csv(OUTPUT_FILE)
+print(f"\nInjected dataset saved to: {OUTPUT_FILE}")
+print(f"New shape: {df_injected.shape}")
+print(f"Approximate anomaly ratio: {NUM_ANOMALIES / len(df_injected):.3%}")
+
+# ────────────────────────────────────────────────────────────────
+# 6. Optional: Visualize before vs after (first PLOT_DAYS days)
+# ────────────────────────────────────────────────────────────────
+if PLOT_BEFORE_AFTER:
+    n_plot = PLOT_DAYS * 24
+    df_orig_plot = df.iloc[:n_plot]
+    df_new_plot = df_injected.iloc[:n_plot]
+
+    fig, axes = plt.subplots(5, 1, figsize=(15, 10), sharex=True)
+    cols_to_plot = ['avg_PM2.5', 'avg_PM2.5_normalized', 'total_noise_duration',
+                    'noise_event_count', 'avg_salience']
+
+    for ax, col in zip(axes, cols_to_plot):
+        ax.plot(df_orig_plot.index, df_orig_plot[col], label=f'Original {col}', alpha=0.6)
+        ax.plot(df_new_plot.index, df_new_plot[col], label=f'Injected {col}', color='darkred', lw=1.5)
+        ax.set_ylabel(col)
+        ax.legend(loc='upper right')
+        ax.grid(True, alpha=0.3)
+
+    plt.suptitle(f'Before vs After Anomaly Injection – First {PLOT_DAYS} Days', y=0.99)
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.show()
+
+print("Anomaly injection complete. You can now:")
+print("1. Run your preprocessing script on the new file to generate updated X_windows.npy")
+print("2. Re-train / evaluate your three models on the more challenging dataset")
+print("3. Compare detection performance (e.g., higher anomaly % should increase detected rate)")
