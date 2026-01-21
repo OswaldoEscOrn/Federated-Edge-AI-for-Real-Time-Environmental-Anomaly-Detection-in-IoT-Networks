@@ -1,0 +1,136 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+import matplotlib.pyplot as plt
+import os
+
+# Configuration
+DATA_PATH = "combined_environmental_data.csv"
+OUTPUT_DIR = "preprocessed_data"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Window parameters (adjust according to your needs / paper experiments)
+WINDOW_SIZE = 24      # e.g. 24 hours = 1 day (hourly data)
+STRIDE = 1            # step size between windows (1 = overlapping)
+PREDICTION_HORIZON = 1  # if doing forecasting; usually 0 or 1 for anomaly detection
+
+# Features to use for anomaly detection
+FEATURES = [
+    'avg_PM2.5_normalized',
+    'total_noise_duration',
+    'noise_event_count',
+    'avg_salience'
+    # you can add 'avg_PM2.5' if you want the raw value too
+]
+
+# ────────────────────────────────────────────────────────────────
+# 1. Load and inspect the combined dataset
+# ────────────────────────────────────────────────────────────────
+print("Loading combined_environmental_data.csv ...")
+df = pd.read_csv(DATA_PATH, index_col=0, parse_dates=True)
+
+# Ensure datetime index is sorted and complete
+df = df.sort_index()
+print(f"Shape: {df.shape}")
+print(f"Date range: {df.index.min()} → {df.index.max()}")
+print("Columns:", df.columns.tolist())
+
+# Check for missing values
+print("\nMissing values:\n", df.isna().sum())
+
+# Fill any remaining NaN (should be very few or none)
+df = df.fillna(0)
+
+# ────────────────────────────────────────────────────────────────
+# 2. Normalization / Standardization
+# ────────────────────────────────────────────────────────────────
+print("\nApplying normalization...")
+
+# We'll use StandardScaler (z-score) for most features → common for anomaly detection
+# You can switch to MinMaxScaler if your model / paper prefers [0,1] range
+
+scalers = {}
+normalized_df = df.copy()
+
+for col in FEATURES:
+    if col in df.columns:
+        scaler = StandardScaler()
+        normalized_df[f"{col}_scaled"] = scaler.fit_transform(df[[col]])
+        scalers[col] = scaler
+        print(f"→ Scaled {col}  (mean={scaler.mean_[0]:.4f}, std={np.sqrt(scaler.var_[0]):.4f})")
+    else:
+        print(f"Warning: column {col} not found in dataset")
+
+# Also keep the original avg_PM2.5 for possible thresholding / interpretation
+if 'avg_PM2.5' in df.columns:
+    normalized_df['avg_PM2.5'] = df['avg_PM2.5']
+
+# Select only the scaled features + timestamp + original PM2.5 (optional)
+final_features = [f"{col}_scaled" for col in FEATURES if f"{col}_scaled" in normalized_df.columns]
+final_df = normalized_df[final_features + ['avg_PM2.5']].copy()
+
+print("\nFinal columns for modeling:", final_df.columns.tolist())
+
+# ────────────────────────────────────────────────────────────────
+# 3. Create sliding windows
+# ────────────────────────────────────────────────────────────────
+def create_sliding_windows(data, window_size, stride=1, horizon=0):
+    """
+    Create 3D array of sliding windows: (n_samples, window_size, n_features)
+    If horizon > 0 → also returns target values for forecasting
+    """
+    X = []
+    y = [] if horizon > 0 else None
+
+    for i in range(0, len(data) - window_size - horizon + 1, stride):
+        window = data[i : i + window_size]
+        X.append(window)
+        if horizon > 0:
+            target = data[i + window_size : i + window_size + horizon]
+            y.append(target)
+
+    X = np.array(X)
+    if y is not None:
+        y = np.array(y)
+
+    return X, y
+
+
+print(f"\nCreating sliding windows (size={WINDOW_SIZE}, stride={STRIDE}, horizon={PREDICTION_HORIZON})")
+
+# Use only scaled features for modeling
+data_array = final_df[final_features].values
+
+X_windows, y_windows = create_sliding_windows(
+    data_array,
+    window_size=WINDOW_SIZE,
+    stride=STRIDE,
+    horizon=PREDICTION_HORIZON
+)
+
+print(f"Windows shape: {X_windows.shape}")  # (n_windows, timesteps, n_features)
+
+if y_windows is not None:
+    print(f"Targets shape:   {y_windows.shape}")
+
+# ────────────────────────────────────────────────────────────────
+# 4. Save processed data
+# ────────────────────────────────────────────────────────────────
+np.save(os.path.join(OUTPUT_DIR, "X_windows.npy"), X_windows)
+
+if y_windows is not None:
+    np.save(os.path.join(OUTPUT_DIR, "y_windows.npy"), y_windows)
+
+# Save scaled dataframe + metadata
+final_df.to_csv(os.path.join(OUTPUT_DIR, "normalized_hourly_data.csv"))
+print(f"\nSaved:")
+print(f"  → {OUTPUT_DIR}/X_windows.npy")
+print(f"  → {OUTPUT_DIR}/normalized_hourly_data.csv")
+
+# Optional: save scalers for inference / inverse transform later
+import joblib
+for col, scaler in scalers.items():
+    joblib.dump(scaler, os.path.join(OUTPUT_DIR, f"scaler_{col}.pkl"))
+
+print("\nPreprocessing completed.")
+print("You can now use X_windows for training autoencoders, LSTMs, isolation forest, etc.")
