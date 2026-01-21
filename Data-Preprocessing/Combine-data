@@ -1,0 +1,84 @@
+import pandas as pd
+import numpy as np
+import os
+from sklearn.preprocessing import StandardScaler
+
+# List of all PRSA air quality files (based on provided documents)
+air_files = [
+    'PRSA_Data_Tiantan_20130301-20170228.csv',
+    'PRSA_Data_Wanshouxigong_20130301-20170228.csv',
+    'PRSA_Data_Huairou_20130301-20170228.csv',
+    'PRSA_Data_Aotizhongxin_20130301-20170228.csv',
+    'PRSA_Data_Wanliu_20130301-20170228.csv',
+    'PRSA_Data_Guanyuan_20130301-20170228.csv',
+    'PRSA_Data_Shunyi_20130301-20170228.csv',
+    'PRSA_Data_Gucheng_20130301-20170228.csv',
+    'PRSA_Data_Changping_20130301-20170228.csv',
+    'PRSA_Data_Nongzhanguan_20130301-20170228.csv',
+    'PRSA_Data_Dongsi_20130301-20170228.csv',
+    'PRSA_Data_Dingling_20130301-20170228.csv'
+]
+
+# Load and process air data
+air_dfs = []
+for file in air_files:
+    df = pd.read_csv(file)
+    df = df.replace('NA', np.nan)
+    df['datetime'] = pd.to_datetime(df['year'].astype(str) + '-' +
+                                    df['month'].astype(str).str.zfill(2) + '-' +
+                                    df['day'].astype(str).str.zfill(2) + ' ' +
+                                    df['hour'].astype(str).str.zfill(2) + ':00:00')
+    df = df.set_index('datetime')
+    df = df.sort_index()
+    df = df[['PM2.5']]
+    df['PM2.5'] = df['PM2.5'].ffill().bfill().fillna(df['PM2.5'].mean())
+    air_dfs.append(df)
+
+# Concatenate all station data and average PM2.5 per timestamp (city-wide average)
+all_air = pd.concat(air_dfs, axis=1)
+all_air['avg_PM2.5'] = all_air.mean(axis=1)
+avg_air_df = all_air[['avg_PM2.5']]
+
+# Get full time range
+full_time_range = pd.date_range(start=avg_air_df.index.min(), end=avg_air_df.index.max(), freq='H')
+avg_air_df = avg_air_df.reindex(full_time_range, method='ffill')
+
+# Normalization for avg_PM2.5
+scaler = StandardScaler()
+avg_air_df['avg_PM2.5_normalized'] = scaler.fit_transform(avg_air_df[['avg_PM2.5']])
+
+# Load noise data
+noise_df = pd.read_csv('UrbanSound8K.csv')
+
+# Compute duration
+noise_df['duration'] = noise_df['end'] - noise_df['start']
+
+# Simulate random datetimes from full_time_range for each noise event
+noise_df['simulated_datetime'] = np.random.choice(full_time_range, size=len(noise_df))
+
+# To handle hourly aggregation, set index to simulated_datetime rounded to hour
+noise_df['hourly_datetime'] = noise_df['simulated_datetime'].dt.floor('H')
+noise_agg = noise_df.groupby('hourly_datetime').agg(
+    total_noise_duration=('duration', 'sum'),
+    noise_event_count=('duration', 'count'),
+    avg_salience=('salience', 'mean')
+).reset_index()
+
+# Set index to hourly_datetime
+noise_agg = noise_agg.set_index('hourly_datetime')
+
+# Reindex to full_time_range, fill NaN with 0 for no events
+noise_agg = noise_agg.reindex(full_time_range, fill_value=0)
+
+# Combine air and noise
+combined_df = avg_air_df.join(noise_agg)
+
+# Fill any remaining NaNs (though should be minimal)
+combined_df = combined_df.fillna(0)
+
+# Save to CSV
+combined_df.to_csv('combined_environmental_data.csv')
+
+# Print confirmation
+print("Combined data saved to 'combined_environmental_data.csv'")
+print(combined_df.head())
