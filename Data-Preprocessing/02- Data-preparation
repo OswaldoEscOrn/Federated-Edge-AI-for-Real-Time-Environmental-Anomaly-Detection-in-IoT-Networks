@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import os
 
 # Configuration
-DATA_PATH = "combined_environmental_data.csv"
-OUTPUT_DIR = "preprocessed_data"
+DATA_PATH = r"D:\Oswaldo's surf project\DR O's database\combined_environmental_data.csv"
+OUTPUT_DIR = r"D:\Oswaldo's surf project\DR O's database\preprocessed_data"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Window parameters (adjust according to your needs / paper experiments)
