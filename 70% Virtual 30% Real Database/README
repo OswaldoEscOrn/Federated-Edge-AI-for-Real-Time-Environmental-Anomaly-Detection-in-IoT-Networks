@@ -1,1 +1,4 @@
-
+Mixed database formed.py: form a new databasse with 70% virtual data from the original virtual dataset, and 30% Real data from the original original dataset
+data preparation.py: preprocess the mixed database， produce x_windows.npy and get  ready for models' training
+100k x_windows form.py: form x_windows_100k.npy 
+100k data augmentation.py: augment data to 100k
