@@ -4,3 +4,5 @@ data preparation.py: preprocess the mixed database， produce x_windows.npy and 
 100k data augmentation.py: augment data to 100k
 
 models folders: 100k and 35040 dataset model training
+
+notice:100k authenticity.py could be found in 30% Virtual 70% Real Database folder to check if the 100k augemented data has a good quality, you just need to change the  directory path
