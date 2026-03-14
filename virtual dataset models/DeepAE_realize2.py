@@ -16,17 +16,17 @@ from tensorflow.keras.optimizers import Adam
 warnings.filterwarnings('ignore')
 
 
-# ====================== 1. 加载已生成的特征文件 ======================
+# ====================== 1. Load extracted feature files ======================
 def load_extracted_features():
     """
-    加载之前生成的特征文件
+    Load previously generated feature files
     """
-    # 定义文件路径
+    # Define file paths
     hour_matrix_path = r"D:\Oswaldo's surf project\My Database\Merge_and_DAE24hour_pattern_matrix_scaled.npy"
     global_vector_path = r"D:\Oswaldo's surf project\My Database\Merge_and_DAEglobal_period_pattern_vector_scaled.npy"
     feature_mapping_path = r"D:\Oswaldo's surf project\My Database\Merge_and_DAEfeature_mapping.json"
 
-    # 检查文件是否存在
+    # Check if files exist
     for path in [hour_matrix_path, global_vector_path, feature_mapping_path]:
         if not os.path.exists(path):
             print(f"❌ File does not exist: {path}")
@@ -51,23 +51,23 @@ def load_extracted_features():
     return hour_matrix, global_vector, feature_mapping
 
 
-# ====================== 2. 改进的虚拟样本生成函数 ======================
+# ====================== 2. Improved virtual sample generation function ======================
 def generate_virtual_samples(hour_matrix, global_vector, n_samples=35040, noise_strategy='adaptive'):
     """
-    基于原始模式生成虚拟样本 - 改进版本，生成更多样化的样本
+    Generate virtual samples based on original patterns - improved version, generating more diverse samples
 
-    参数:
-    n_samples: 生成样本数量，默认35040与PDF中一致
-    noise_strategy: 噪声策略 - 'adaptive'(自适应), 'time_varying'(时间变化), 'feature_dependent'(特征相关)
+    Parameters:
+    n_samples: number of samples to generate, default 35040 consistent with PDF
+    noise_strategy: noise strategy - 'adaptive', 'time_varying', 'feature_dependent'
     """
     print(f"\n🎲 Generating {n_samples:,} virtual samples...")
 
-    # 确保输入是正确形状
-    if len(hour_matrix.shape) == 2:  # 形状为(24, features)
+    # Ensure input is correct shape
+    if len(hour_matrix.shape) == 2:  # shape (24, features)
         original_hour_matrix = hour_matrix
         n_hours, hour_features = hour_matrix.shape
-    elif len(hour_matrix.shape) == 1:  # 展平的一维数组
-        # 假设是24*features的结构
+    elif len(hour_matrix.shape) == 1:  # flattened 1D array
+        # Assume structure is 24*features
         total_features = hour_matrix.shape[0]
         if total_features % 24 == 0:
             hour_features = total_features // 24
@@ -79,7 +79,7 @@ def generate_virtual_samples(hour_matrix, global_vector, n_samples=35040, noise_
     else:
             raise ValueError(f"Unsupported hour matrix shape: {hour_matrix.shape}")
 
-    # 处理全局向量
+    # Handle global vector
     if len(global_vector.shape) == 1:
         global_features = global_vector.shape[0]
         original_global = global_vector.reshape(1, -1)
@@ -90,75 +90,75 @@ def generate_virtual_samples(hour_matrix, global_vector, n_samples=35040, noise_
     print(f"  Hour matrix shape: ({n_hours}, {hour_features})")
     print(f"  Global vector shape: (1, {global_features})")
 
-    # 计算原始数据的统计信息
+    # Compute statistics of original data
     hour_mean = original_hour_matrix.mean(axis=0, keepdims=True)
-    hour_std = original_hour_matrix.std(axis=0, keepdims=True) + 1e-8  # 防止除零
+    hour_std = original_hour_matrix.std(axis=0, keepdims=True) + 1e-8  # prevent division by zero
 
-    # 生成虚拟样本
+    # Generate virtual samples
     virtual_hour_matrices = []
     virtual_global_vectors = []
 
-    # 为每个小时创建不同的噪声模式
+    # Create different noise patterns for each hour
     hour_noise_factors = np.random.uniform(0.5, 2.0, size=n_hours)
 
     for i in range(n_samples):
         if noise_strategy == 'adaptive':
-            # 自适应噪声：基于特征的标准差
+            # Adaptive noise: based on feature standard deviation
             base_noise = np.random.normal(0, 1, original_hour_matrix.shape)
-            hour_noise = base_noise * hour_std * 0.3  # 30%的变异
+            hour_noise = base_noise * hour_std * 0.3  # 30% variation
 
-            # 添加时间相关的噪声
+            # Add time-related noise
             time_noise = np.random.normal(0, 0.2, original_hour_matrix.shape)
             time_noise = time_noise * hour_noise_factors.reshape(-1, 1)
 
-            # 添加特征相关的噪声
-            feature_correlation = 0.7  # 特征间相关性
+            # Add feature-related noise
+            feature_correlation = 0.7  # correlation between features
             correlated_noise = base_noise[:, :1] * feature_correlation + base_noise * (1 - feature_correlation)
             feature_noise = correlated_noise * hour_std * 0.2
 
-            # 组合噪声
+            # Combine noise
             total_noise = hour_noise + time_noise + feature_noise
 
         elif noise_strategy == 'time_varying':
-            # 时间变化噪声：不同小时不同噪声水平
+            # Time-varying noise: different noise levels for different hours
             time_of_day_factor = np.sin(np.linspace(0, 2 * np.pi, n_hours)).reshape(-1, 1) * 0.5 + 1
             base_noise = np.random.normal(0, 1, original_hour_matrix.shape)
             total_noise = base_noise * hour_std * 0.25 * time_of_day_factor
 
         else:  # 'feature_dependent'
-            # 特征相关噪声：基于特征重要性
+            # Feature-dependent noise: based on feature importance
             feature_importance = np.abs(hour_mean.ravel()) / np.abs(hour_mean.ravel()).sum()
             feature_importance = feature_importance.reshape(1, -1).repeat(n_hours, axis=0)
 
             base_noise = np.random.normal(0, 1, original_hour_matrix.shape)
             total_noise = base_noise * hour_std * 0.3 * feature_importance
 
-        # 生成虚拟小时矩阵
+        # Generate virtual hour matrix
         virtual_hour = original_hour_matrix + total_noise
 
-        # 确保非负值（如果需要）
-        if np.min(original_hour_matrix) >= 0:  # 如果原始数据是非负的
+        # Ensure non-negative values (if needed)
+        if np.min(original_hour_matrix) >= 0:  # if original data is non-negative
             virtual_hour = np.maximum(virtual_hour, 0)
 
-        # 生成虚拟全局向量
+        # Generate virtual global vector
         global_mean = original_global.mean()
         global_std = original_global.std() + 1e-8
 
         global_noise = np.random.normal(0, global_std * 0.2, original_global.shape)
         virtual_global = original_global + global_noise
 
-        # 如果原始全局数据是非负的，确保非负
+        # If original global data is non-negative, ensure non-negative
         if np.min(original_global) >= 0:
             virtual_global = np.maximum(virtual_global, 0)
 
         virtual_hour_matrices.append(virtual_hour)
         virtual_global_vectors.append(virtual_global)
 
-        # 进度显示
+        # Progress display
         if (i + 1) % 5000 == 0:
             print(f"    Generated {i + 1:,} samples...")
 
-    # 转换为numpy数组
+    # Convert to numpy arrays
     virtual_hour_matrices = np.array(virtual_hour_matrices)
     virtual_global_vectors = np.array(virtual_global_vectors)
 
@@ -166,7 +166,7 @@ def generate_virtual_samples(hour_matrix, global_vector, n_samples=35040, noise_
     print(f"   Hour matrix shape: {virtual_hour_matrices.shape}")
     print(f"   Global vector shape: {virtual_global_vectors.shape}")
 
-    # 计算样本多样性
+    # Compute sample diversity
     hour_diversity = virtual_hour_matrices.std(axis=0).mean()
     global_diversity = virtual_global_vectors.std(axis=0).mean()
     print(f"    Sample diversity metric - Hour features: {hour_diversity:.4f}, Global features: {global_diversity:.4f}")
@@ -174,26 +174,26 @@ def generate_virtual_samples(hour_matrix, global_vector, n_samples=35040, noise_
     return virtual_hour_matrices, virtual_global_vectors
 
 
-# ====================== 3. 数据准备函数 ======================
+# ====================== 3. Data preparation function ======================
 def prepare_dae_input(hour_matrices, global_vectors, mode='combined'):
     """
-    准备AutoEncoder输入数据
+    Prepare input data for AutoEncoder
     mode: 'hour_only', 'global_only', 'combined'
     """
     n_samples = hour_matrices.shape[0]
 
     if mode == 'hour_only':
-        # 只使用小时矩阵 (n_samples, 24, features) → 展平为 (n_samples, 24*features)
+        # Use only hour matrix (n_samples, 24, features) → flatten to (n_samples, 24*features)
         X = hour_matrices.reshape(n_samples, -1)
         print(f"📊 Using hour matrix features: {X.shape}")
 
     elif mode == 'global_only':
-        # 只使用全局+时段向量 (n_samples, features)
+        # Use only global + temporal vector (n_samples, features)
         X = global_vectors
         print(f"📊 Using global + temporal features: {X.shape}")
 
     elif mode == 'combined':
-        # 合并所有特征 (n_samples, 24*features + global_features)
+        # Combine all features (n_samples, 24*features + global_features)
         hour_flat = hour_matrices.reshape(n_samples, -1)
         global_flat = global_vectors.reshape(n_samples, -1)
         X = np.concatenate([hour_flat, global_flat], axis=1)
@@ -202,16 +202,16 @@ def prepare_dae_input(hour_matrices, global_vectors, mode='combined'):
     return X
 
 
-# ====================== 4. Deep AutoEncoder构建 ======================
+# ====================== 4. Deep AutoEncoder construction ======================
 def build_deep_autoencoder(input_dim, encoding_dim=32):
     """
-    构建Deep AutoEncoder模型
+    Build Deep AutoEncoder model
     """
     print(f"\n🔧 Building Deep AutoEncoder model:")
     print(f"  Input dimension: {input_dim}")
     print(f"  Encoding dimension: {encoding_dim}")
 
-    # ====== 编码器 ======
+    # ====== Encoder ======
     encoder = Sequential([
         Input(shape=(input_dim,), name='input'),
         Dense(256, activation='relu', name='encoder_dense1'),
@@ -229,7 +229,7 @@ def build_deep_autoencoder(input_dim, encoding_dim=32):
         Dense(encoding_dim, activation='relu', name='bottleneck')
     ], name='encoder')
 
-    # ====== 解码器 ======
+    # ====== Decoder ======
     decoder = Sequential([
         Input(shape=(encoding_dim,), name='decoder_input'),
         Dense(64, activation='relu', name='decoder_dense1'),
@@ -247,7 +247,7 @@ def build_deep_autoencoder(input_dim, encoding_dim=32):
         Dense(input_dim, activation='linear', name='output')
     ], name='decoder')
 
-    # ====== 完整AutoEncoder ======
+    # ====== Complete AutoEncoder ======
     input_layer = Input(shape=(input_dim,), name='autoencoder_input')
     encoded = encoder(input_layer)
     decoded = decoder(encoded)
@@ -256,17 +256,17 @@ def build_deep_autoencoder(input_dim, encoding_dim=32):
     return autoencoder, encoder, decoder
 
 
-# ====================== 5. 模型训练 ======================
+# ====================== 5. Model training ======================
 def train_autoencoder(X_train, X_val, encoding_dim=32, epochs=80):
     """
-    训练AutoEncoder
+    Train AutoEncoder
     """
     input_dim = X_train.shape[1]
 
-    # 构建模型
+    # Build model
     autoencoder, encoder, decoder = build_deep_autoencoder(input_dim, encoding_dim)
 
-    # 编译模型
+    # Compile model
     autoencoder.compile(
         optimizer=Adam(learning_rate=0.001),
         loss='mse',
@@ -276,7 +276,7 @@ def train_autoencoder(X_train, X_val, encoding_dim=32, epochs=80):
     print("\n📋 Model Architecture Summary:")
     autoencoder.summary()
 
-    # 计算参数数量
+    # Calculate parameter counts
     total_params = autoencoder.count_params()
     trainable_params = np.sum([np.prod(v.shape) for v in autoencoder.trainable_weights])
     non_trainable_params = total_params - trainable_params
@@ -287,7 +287,7 @@ def train_autoencoder(X_train, X_val, encoding_dim=32, epochs=80):
     print(f"  Non-trainable params: {non_trainable_params:,}")
     print(f"  Memory usage: {total_params * 4 / 1024:.2f} KB")
 
-    # 回调函数
+    # Callbacks
     callbacks = [
         # EarlyStopping(
         #     monitor='val_loss',
@@ -304,7 +304,7 @@ def train_autoencoder(X_train, X_val, encoding_dim=32, epochs=80):
         )
     ]
 
-    # 训练模型
+    # Train model
     print("\n🚀 start training Deep AutoEncoder...")
     print(f"  Training set size: {X_train.shape}")
     print(f"  Validation set size: {X_val.shape}")
@@ -323,11 +323,10 @@ def train_autoencoder(X_train, X_val, encoding_dim=32, epochs=80):
     return autoencoder, encoder, decoder, history, total_params
 
 
-# ====================== 6. 评估和异常检测 ======================
-# ====================== 6. 评估和异常检测 ======================
+# ====================== 6. Evaluation and anomaly detection ======================
 def evaluate_and_detect_anomalies(autoencoder, X_val, X_test=None, percentile=95):
     """
-    评估模型并检测异常
+    Evaluate model and detect anomalies
     """
     print("\n📈 Model Evaluation Results:")
 
@@ -344,12 +343,12 @@ def evaluate_and_detect_anomalies(autoencoder, X_val, X_test=None, percentile=95
     threshold = np.percentile(val_errors, percentile)
     print(f"  Validation set reconstruction error {percentile}th percentile threshold: {threshold:.6f}")
 
-    # 如果传入了测试集，在测试集上检测异常
+    # If test set is provided, detect anomalies on test set
     if X_test is not None:
         test_reconstructed = autoencoder.predict(X_test, verbose=0)
         test_errors = np.mean((X_test - test_reconstructed) ** 2, axis=1)
 
-        # 检测异常
+        # Detect anomalies
         anomalies = test_errors > threshold
         anomalies_count = np.sum(anomalies)
         anomaly_ratio = anomalies_count / len(X_test) * 100
@@ -359,7 +358,7 @@ def evaluate_and_detect_anomalies(autoencoder, X_val, X_test=None, percentile=95
 
         return threshold, anomalies_count, anomaly_ratio, test_errors, test_reconstructed
     else:
-        # 只在验证集上检测异常
+        # Detect anomalies on validation set only
         anomalies = val_errors > threshold
         anomalies_count = np.sum(anomalies)
         anomaly_ratio = anomalies_count / len(X_val) * 100
@@ -368,7 +367,7 @@ def evaluate_and_detect_anomalies(autoencoder, X_val, X_test=None, percentile=95
 
         return threshold, anomalies_count, anomaly_ratio, val_errors, val_reconstructed
 
-    # 如果在测试集上检测异常
+    # If test set is provided
     anomalies_count = 0
     anomaly_ratio = 0
 
@@ -376,32 +375,32 @@ def evaluate_and_detect_anomalies(autoencoder, X_val, X_test=None, percentile=95
     #     test_reconstructed = autoencoder.predict(X_test, verbose=0)
     #     test_errors = np.mean((X_test - test_reconstructed) ** 2, axis=1)
     #
-    #     # 检测异常
+    #     # Detect anomalies
     #     anomalies = test_errors > threshold
     #     anomalies_count = np.sum(anomalies)
     #     anomaly_ratio = anomalies_count / len(X_test) * 100
     #
-    #     print(f"  检测到 {anomalies_count} 个异常样本，共 {len(X_test)} 个样本")
-    #     print(f"  异常比例: {anomaly_ratio:.2f}%")
+    #     print(f"  Detected {anomalies_count} anomalous samples, total {len(X_test)} samples")
+    #     print(f"  Anomaly ratio: {anomaly_ratio:.2f}%")
     #
     #     return threshold, anomalies_count, anomaly_ratio, test_errors, test_reconstructed
     # else:
     #     return threshold, 0, 0, val_errors, val_reconstructed
 
 
-# ====================== 7. 可视化函数 ======================
+# ====================== 7. Visualization functions ======================
 def visualize_results(history, X_original, X_reconstructed, errors, threshold,
                       feature_mapping, model_name="Deep AutoEncoder"):
     """
-    可视化训练结果和异常检测
+    Visualize training results and anomaly detection
     """
     print(f"\n📊 Generating visualization results...")
 
-    # 设置绘图风格
+    # Set plotting style
     plt.style.use('seaborn-v0_8-darkgrid')
     fig = plt.figure(figsize=(20, 15))
 
-    # 1. 训练损失变化
+    # 1. Training loss history
     ax1 = plt.subplot(3, 3, 1)
     epochs = range(1, len(history.history['loss']) + 1)
     ax1.plot(epochs, history.history['loss'], label='Training Loss', linewidth=2)
@@ -412,7 +411,7 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
     ax1.legend()
     ax1.grid(True, alpha=0.3)
 
-    # 2. MAE变化
+    # 2. MAE history
     ax2 = plt.subplot(3, 3, 2)
     ax2.plot(epochs, history.history['mae'], label='Training MAE', linewidth=2, color='orange')
     if 'val_mae' in history.history:
@@ -423,14 +422,14 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
     ax2.legend()
     ax2.grid(True, alpha=0.3)
 
-    # 3. 重建误差分布
+    # 3. Reconstruction error distribution
     ax3 = plt.subplot(3, 3, 3)
     n_bins = min(100, len(errors) // 10)
     ax3.hist(errors, bins=n_bins, alpha=0.7, color='skyblue', edgecolor='black', density=True)
     ax3.axvline(x=threshold, color='red', linestyle='--', linewidth=2,
                 label=f'Threshold ({threshold:.4f})')
 
-    # 添加高斯分布拟合
+    # Add Gaussian fit
     from scipy.stats import norm
     mu, std = norm.fit(errors)
     xmin, xmax = ax3.get_xlim()
@@ -444,7 +443,7 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
     ax3.legend()
     ax3.grid(True, alpha=0.3)
 
-    # 4. 原始vs重建特征对比（随机选择5个样本）
+    # 4. Original vs reconstructed feature comparison (randomly select 5 samples)
     ax4 = plt.subplot(3, 3, 4)
     n_samples_to_show = min(5, len(X_original))
 
@@ -470,11 +469,11 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
     ax4.legend()
     ax4.grid(True, alpha=0.3)
 
-    # 5. 重建误差时间序列
+    # 5. Reconstruction error time series
     ax5 = plt.subplot(3, 3, 5)
     sample_indices = range(len(errors))
 
-    # 对误差进行平滑
+    # Smooth errors
     window_size = min(100, len(errors) // 10)
     if window_size > 1:
         errors_smooth = np.convolve(errors, np.ones(window_size) / window_size, mode='valid')
@@ -485,7 +484,7 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
     ax5.axhline(y=threshold, color='red', linestyle='--', linewidth=2,
                 label=f'Threshold ({threshold:.4f})')
 
-    # 标记异常
+    # Mark anomalies
     anomalies = errors > threshold
     anomaly_indices = np.where(anomalies)[0]
     ax5.scatter(anomaly_indices, errors[anomaly_indices],
@@ -497,14 +496,14 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
     ax5.legend(loc='upper right', fontsize=10)
     ax5.grid(True, alpha=0.3)
 
-    # 6. 误差箱线图
+    # 6. Error box plot
     ax6 = plt.subplot(3, 3, 6)
     box_data = [errors[~anomalies], errors[anomalies]] if len(anomaly_indices) > 0 else [errors]
     box_labels = ['Normal', 'Anomaly'] if len(anomaly_indices) > 0 else ['All Samples']
 
     bp = ax6.boxplot(box_data, labels=box_labels, patch_artist=True)
 
-    # 设置颜色
+    # Set colors
     colors = ['lightblue', 'lightcoral'] if len(anomaly_indices) > 0 else ['lightblue']
     for patch, color in zip(bp['boxes'], colors):
         patch.set_facecolor(color)
@@ -514,7 +513,7 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
     ax6.set_ylabel('Reconstruction Error', fontsize=12)
     ax6.grid(True, alpha=0.3, axis='y')
 
-    # 7. 学习率变化
+    # 7. Learning rate schedule
     ax7 = plt.subplot(3, 3, 7)
     if 'lr' in history.history:
         ax7.plot(epochs, history.history['lr'], linewidth=2, color='green')
@@ -527,12 +526,12 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
                  ha='center', va='center', transform=ax7.transAxes, fontsize=12)
         ax7.set_title('Learning Rate Schedule', fontsize=14, fontweight='bold')
 
-    # 8. 特征重要性热图
+    # 8. Feature importance heatmap
     ax8 = plt.subplot(3, 3, 8)
     if len(X_original) > 0:
         feature_errors = np.mean((X_original - X_reconstructed) ** 2, axis=0)
 
-        # 重塑为24小时模式（如果是小时特征）
+        # Reshape to 24-hour pattern (if hour features exist)
         if 'hour_feature_names' in feature_mapping:
             hour_feature_count = feature_mapping.get('hour_feature_count', 11)
             if len(feature_errors) >= 24 * hour_feature_count:
@@ -543,11 +542,11 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
                 ax8.set_title('Hourly Feature Reconstruction Error', fontsize=14, fontweight='bold')
                 plt.colorbar(im, ax=ax8, label='Reconstruction Error')
 
-                # 设置y轴标签
+                # Set y-axis labels
                 ax8.set_yticks(range(0, 24, 3))
                 ax8.set_yticklabels([f'{h:02d}:00' for h in range(0, 24, 3)])
         else:
-            # 显示特征误差条形图
+            # Display feature error bar chart
             n_top_features = min(20, len(feature_errors))
             top_indices = np.argsort(feature_errors)[-n_top_features:][::-1]
             top_errors = feature_errors[top_indices]
@@ -559,10 +558,10 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
                           fontsize=14, fontweight='bold')
             ax8.set_xlabel('Average Reconstruction Error', fontsize=12)
 
-    # 9. 异常检测性能
+    # 9. Anomaly detection performance
     ax9 = plt.subplot(3, 3, 9)
     if np.sum(errors > threshold) > 0:
-        # 计算不同阈值下的性能
+        # Compute performance at different thresholds
         thresholds = np.percentile(errors, range(90, 100))
         anomaly_rates = []
 
@@ -584,7 +583,7 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
         ax9.set_title('Anomaly Detection Performance', fontsize=14, fontweight='bold')
 
     plt.tight_layout()
-    # 保存图表
+    # Save figure
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     save_path = f"D:\\Oswaldo's surf project\\My Database\\visualization_{timestamp}.png"
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
@@ -593,12 +592,12 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
     # plt.show()
     plt.close()
 
-    # 输出特征级分析
+    # Output feature-level analysis
     if 'hour_feature_names' in feature_mapping and len(feature_errors) > 0:
         print("\n📊 Hourly Feature Reconstruction Error Analysis (Top 5):")
         hour_feature_names = feature_mapping['hour_feature_names']
 
-        # 计算每个小时的平均误差
+        # Calculate average error per hour
         hour_errors_reshaped = feature_errors[:24 * len(hour_feature_names)].reshape(24, len(hour_feature_names))
 
         for hour in range(min(5, 24)):
@@ -614,9 +613,9 @@ def visualize_results(history, X_original, X_reconstructed, errors, threshold,
                   f"Min error: {min_error_feature} ({min_error_value:.4f})")
 
 
-# ====================== 8. 主流程 ======================
+# ====================== 8. Main workflow ======================
 def main():
-    # 配置路径
+    # Configure paths
     base_path = r"D:\Oswaldo's surf project\My Database\\"
     model_save_path = base_path + "models\\"
 
@@ -624,13 +623,13 @@ def main():
     print("DEEP AUTOENCODER TRAINING PIPELINE")
     print("=" * 80)
 
-    # 1. 加载已提取的特征
+    # 1. Load extracted features
     hour_matrix, global_vector, feature_mapping = load_extracted_features()
     if hour_matrix is None:
         print("❌ Failed to load feature files, exiting process")
         return
 
-    # 2. 生成大量虚拟样本 (与PDF中的35040个样本一致)
+    # 2. Generate a large number of virtual samples (consistent with 35,040 samples in PDF)
     n_virtual_samples = 100000
     virtual_hour_matrices, virtual_global_vectors = generate_virtual_samples(
         hour_matrix, global_vector,
@@ -670,42 +669,42 @@ def main():
     train_ratio = 0.85
     val_ratio = 0.15
 
-    # 按时间顺序划分（假设样本是按时间顺序的）
+    # Split in chronological order (assuming samples are in chronological order)
     train_end = int(n_samples * train_ratio)
     val_end = train_end + int(n_samples * val_ratio)
 
     X_train = X[:train_end]
     X_val = X[train_end:val_end]
 
-    # X_test = X[val_end:]  # 创建测试集
+    # X_test = X[val_end:]  # Create test set
 
     print(f"  Training Set: {X_train.shape[0]:,} samples ({train_ratio * 100:.0f}%)")
     print(f"  Validation Set: {X_val.shape[0]:,} samples ({val_ratio * 100:.0f}%)")
     print(f"  Total Samples: {n_samples:,} ")
     print(f"  Actual Sample Distribution: Train:{len(X_train):,} | Validation:{len(X_val):,} | Total:{len(X_train) + len(X_val):,}")
 
-    # 5. 训练AutoEncoder
+    # 5. Train AutoEncoder
     autoencoder, encoder, decoder, history, total_params = train_autoencoder(
         X_train, X_val,
-        encoding_dim=32,  # 更大的编码维度以捕捉更多信息
+        encoding_dim=32,  # Larger encoding dimension to capture more information
         epochs=80
     )
 
-    # 6. 评估和异常检测
+    # 6. Evaluate and detect anomalies
     print("\n🔍 Evaluating Deep_AE model on validation set:")
     threshold, val_anomalies_count, val_anomaly_ratio, val_errors, val_reconstructed = evaluate_and_detect_anomalies(
         autoencoder, X_val, X_val, percentile=95
     )
 
-    # 7. 在整个数据集上评估
+    # 7. Evaluate on the complete dataset
     print("\n🔍 Evaluating on the complete Deep_AE dataset:")
-    # 使用所有35040个样本进行评估
-    X_all = X  # 所有生成的虚拟样本
+    # Use all 35040 samples for evaluation
+    X_all = X  # all generated virtual samples
 
     all_reconstructed = autoencoder.predict(X_all, verbose=0)
     all_errors = np.mean((X_all - all_reconstructed) ** 2, axis=1)
 
-    # 检测异常
+    # Detect anomalies
     all_anomalies = all_errors > threshold
     all_anomalies_count = np.sum(all_anomalies)
     all_anomaly_ratio = all_anomalies_count / len(X_all) * 100
@@ -714,27 +713,27 @@ def main():
     print(f"  Anomalies detected: {all_anomalies_count:,}")
     print(f"  Anomaly proportion: {all_anomaly_ratio:.2f}%")
 
-    # 8. 可视化结果（使用所有35040个样本）
+    # 8. Visualize results (using all 35040 samples)
     print("\n📊 Generating visualization for all Deep_AE samples:")
     visualize_results(
         history, X_all, all_reconstructed, all_errors, threshold,
         feature_mapping, model_name="Deep AutoEncoder (100000 samples)"
     )
 
-    # 9. 特征编码和分析
+    # 9. Feature encoding and analysis
     encoded_features = encode_and_analyze(encoder, X_all, feature_mapping)
 
-    # 10. 保存模型
+    # 10. Save models
     save_models(autoencoder, encoder, decoder, model_save_path)
 
-    # 11. 生成分析报告
+    # 11. Generate analysis report
     print("\n" + "=" * 80)
     print("📋 Deep_AE Training Completion Report")
     print("=" * 80)
 
-    # 输出与PDF一致的格式
+    # Output in format consistent with PDF
     print(f"\n📊 Deep_AE Model Performance Summary:")
-    print(f"  Total samples: {len(X_all):,}")  # 改为 X_all 的长度
+    print(f"  Total samples: {len(X_all):,}")
     print(f"  Actual training samples used: {X_train.shape[0]:,}")
     print(f"  Actual validation samples used: {X_val.shape[0]:,}")
     print(f"  Total params: {total_params:,}")
@@ -742,19 +741,7 @@ def main():
     print(f"  95th percentile threshold (validation): {threshold:.6f}")
     print(f"  Anomaly detection (all samples): {all_anomalies_count:,} / {len(X_all):,} ({all_anomaly_ratio:.2f}%)")
 
-    # 与PDF中的模型对比
-    # print("\n📈 与PDF模型对比:")
-    # print("-" * 80)
-    # print(f"{'Model':<15} {'Params':<12} {'Validation MAE':<18} {'Anomaly Rate':<15} {'Samples':<10}")
-    # print("-" * 80)
-    # print(f"{'LSTM-AE':<15} {'29,124':<12} {'~0.401':<18} {'5.77%':<15} {'35,040':<10}")
-    # print(f"{'Conv-AE':<15} {'7,892':<12} {'~0.388':<18} {'6.00%':<15} {'35,040':<10}")
-    # print(f"{'Conv-VAE':<15} {'9,444':<12} {'~0.387':<18} {'6.07%':<15} {'35,040':<10}")
-    # print(
-    #     f"{'Our Model':<15} {f'{total_params:,}':<12} {f'{history.history["val_loss"][-1]:.6f}':<18} {f'{all_anomaly_ratio:.2f}%':<15} {f'{n_virtual_samples:,}':<10}")
-    # print("-" * 80)
-
-    # 保存详细结果
+    # Save detailed results
     results = {
         'model_name': 'Deep_AutoEncoder',
         'total_params': int(total_params),
@@ -785,10 +772,10 @@ def main():
     print("\n🎉 Deep AutoEncoder training pipeline completed!")
 
 
-# ====================== 9. 辅助函数 ======================
+# ====================== 9. Helper functions ======================
 def encode_and_analyze(encoder, X, feature_mapping):
     """
-    使用编码器提取特征并分析
+    Extract encoded features and analyze using encoder
     """
     print("\n🔍 Feature Encoding and Analysis:")
 
@@ -803,12 +790,12 @@ def encode_and_analyze(encoder, X, feature_mapping):
 
 def save_models(autoencoder, encoder, decoder, save_path):
     """
-    保存训练好的模型
+    Save trained models
     """
-    # 确保保存路径存在
+    # Ensure save path exists
     os.makedirs(save_path, exist_ok=True)
 
-    # 保存为HDF5格式
+    # Save as HDF5 format
     autoencoder.save(f"{save_path}autoencoder_model2.h5")
     encoder.save(f"{save_path}encoder_model2.h5")
     decoder.save(f"{save_path}decoder_model2.h5")
@@ -820,14 +807,14 @@ def save_models(autoencoder, encoder, decoder, save_path):
 
 
 
-# ====================== 10. 运行主流程 ======================
+# ====================== 10. Run main workflow ======================
 if __name__ == "__main__":
-    # 设置TensorFlow日志级别
+    # Set TensorFlow logging level
     tf.get_logger().setLevel('ERROR')
 
-    # 设置matplotlib中文字体
+    # Set matplotlib font for minus signs
     # plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
     plt.rcParams['axes.unicode_minus'] = False
 
-    # 运行主流程
+    # Run main workflow
     main()
