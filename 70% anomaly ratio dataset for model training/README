@@ -6,3 +6,6 @@ augmented  100k_data authenticity.py:check whether the augmented  100k dataset i
 
 35040_70%_anomaly_data_x_windows_formed.py： form x_windows for 35040 dataset and use for models' training
 100k_data_preparation_x_windows_formed.py: form x_windows for 100k dataset and use for models' training
+
+Deep_AE real1.py,CONV_AE real1.py,LSTM_AE real1.py, CONV_VAE real1.py: 35040 dataset model training
+Deep_AE 100k.py,CONV_AE 100k.py,LSTM_AE 100k.py, CONV_VAE 100k.py: 100k dataset model training
