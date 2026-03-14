@@ -1,1 +1,15 @@
+Deep_AE in real.py: 35040 real samples for model training
+Deep_AE in real2.py:100k augmented real samples for training
 
+LSTM_AE  in real.py:35040 real samples for model training
+LSTM_AE  in real2.py:100k augmented real samples for training
+
+CONV_AE in real.py:35040 real samples for model training
+CONV_AE in real2.py:100k augmented real samples for training
+
+CONV_VAE in real.py:35040 real samples for model training
+CONV_VAE in real2.py:100k augmented real samples for training
+
+data_augmentation_optimized.py:augment data from 35040 to 100k
+
+augmented data authenticity.py: to check if the augmented data is satisfactory
