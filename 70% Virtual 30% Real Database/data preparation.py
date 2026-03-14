@@ -1,27 +1,27 @@
 # ====================== mixed_data_preparation.py ======================
 """
-混合数据预处理脚本 - 修改版：只保留标准化后的_scaled列
+Mixed data preprocessing script - modified version: keep only normalized _scaled columns
 """
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 import os
 
-# ==================== 修改配置 ====================
-# 输入：混合数据CSV文件
+# ==================== Configuration ====================
+# Input: mixed data CSV file
 MIXED_DATA_PATH = r"D:\Oswaldo's surf project\70% Virtual 30% Real Database_Hourly\mixed_dataset_hourly_35040.csv"
 
-# 输出目录：为混合数据创建单独的预处理目录
+# Output directory: create a separate preprocessing directory for mixed data
 OUTPUT_DIR = r"D:\Oswaldo's surf project\70% Virtual 30% Real Database_Hourly\preprocessed_data_mixed"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# 窗口参数（与原脚本保持一致）
-WINDOW_SIZE = 24  # 24小时 = 1天
-STRIDE = 1  # 滑动步长
-PREDICTION_HORIZON = 0  # 异常检测设为0
+# Window parameters (consistent with original script)
+WINDOW_SIZE = 24  # 24 hours = 1 day
+STRIDE = 1        # sliding stride
+PREDICTION_HORIZON = 0  # anomaly detection uses 0
 
-# ==================== 特征列配置 ====================
-# 混合数据中的原始列名（未标准化）
+# ==================== Feature column configuration ====================
+# Original column names in the mixed data (non-normalized)
 ORIGINAL_FEATURES = [
     'avg_PM2.5',
     'total_noise_duration',
@@ -29,7 +29,7 @@ ORIGINAL_FEATURES = [
     'avg_salience'
 ]
 
-# 标准化后的列名（必须带_scaled后缀）
+# Normalized column names (must have _scaled suffix)
 SCALED_FEATURES = [
     'avg_PM2.5_scaled',
     'total_noise_duration_scaled',
@@ -38,25 +38,25 @@ SCALED_FEATURES = [
 ]
 
 
-# ==================== 主函数 ====================
+# ==================== Main function ====================
 def main():
     print("=" * 80)
-    print("混合数据预处理脚本（只保留_scaled列）")
+    print("Mixed data preprocessing script (keep only _scaled columns)")
     print("=" * 80)
 
-    # 1. 加载混合数据
-    print("\n1. 加载混合数据...")
+    # 1. Load mixed data
+    print("\n1. Loading mixed data...")
     df = pd.read_csv(MIXED_DATA_PATH, parse_dates=['timestamp'])
 
-    # 设置时间戳为索引
+    # Set timestamp as index
     df = df.set_index('timestamp')
     df = df.sort_index()
 
-    print(f"数据形状: {df.shape}")
-    print(f"日期范围: {df.index.min()} → {df.index.max()}")
-    print("所有列名:", df.columns.tolist())
+    print(f"Data shape: {df.shape}")
+    print(f"Date range: {df.index.min()} → {df.index.max()}")
+    print("All columns:", df.columns.tolist())
 
-    # 检查原始特征是否存在
+    # Check existence of original features
     available_original_features = []
     missing_features = []
 
@@ -65,80 +65,80 @@ def main():
             available_original_features.append(feat)
         else:
             missing_features.append(feat)
-            print(f"⚠️ 警告: 特征 {feat} 不在数据中")
+            print(f"⚠️ Warning: Feature {feat} not in data")
 
     if len(missing_features) > 0:
-        print(f"\n🔍 查找可能的替代列名:")
+        print(f"\n🔍 Searching for possible alternative column names:")
         for missing_feat in missing_features:
             possible_matches = [col for col in df.columns if missing_feat in col]
             if possible_matches:
-                print(f"  {missing_feat} → 可能匹配: {possible_matches}")
-                # 使用第一个匹配项
+                print(f"  {missing_feat} → possible matches: {possible_matches}")
+                # Use the first match
                 if possible_matches[0] not in available_original_features:
                     available_original_features.append(possible_matches[0])
             else:
-                print(f"  {missing_feat} → 没有找到匹配项")
+                print(f"  {missing_feat} → no matches found")
 
-    print(f"\n可用的原始特征: {available_original_features}")
+    print(f"\nAvailable original features: {available_original_features}")
 
     if len(available_original_features) < 2:
-        print("❌ 错误: 可用的特征太少，请检查数据列名")
+        print("❌ Error: Too few available features, please check column names")
         return
 
-    # 2. 检查缺失值
-    print("\n2. 检查缺失值...")
+    # 2. Check missing values
+    print("\n2. Checking missing values...")
     missing_counts = df[available_original_features].isna().sum()
     print(missing_counts)
 
     if missing_counts.sum() > 0:
-        print(f"  填充 {missing_counts.sum()} 个缺失值")
+        print(f"  Filling {missing_counts.sum()} missing values")
         df_filled = df[available_original_features].fillna(0)
     else:
         df_filled = df[available_original_features]
 
-    # 3. ==================== 应用标准化并创建_scaled列 ====================
-    print("\n3. 对混合数据进行标准化（只创建_scaled列）...")
+    # 3. ==================== Apply standardization and create _scaled columns ====================
+    print("\n3. Standardizing mixed data (creating only _scaled columns)...")
 
     scalers = {}
     normalized_df = pd.DataFrame(index=df_filled.index)
 
-    # 为每个原始特征应用标准化，只创建_scaled列
+    # For each original feature, apply standardization and create only the _scaled column
     for i, original_col in enumerate(available_original_features):
         scaler = StandardScaler()
         original_vals = df_filled[[original_col]].values
 
-        # 应用标准化
+        # Apply standardization
         scaled_vals = scaler.fit_transform(original_vals)
 
-        # 使用预定义的_scaled列名
+        # Use predefined _scaled column name
         if i < len(SCALED_FEATURES):
             scaled_col = SCALED_FEATURES[i]
         else:
             scaled_col = f"{original_col}_scaled"
 
-        # 只添加标准化后的列（不保留原始列）
+        # Add only the normalized column (do not keep the original column)
         normalized_df[scaled_col] = scaled_vals
 
-        # 保存标准化器
+        # Save the scaler
         scalers[original_col] = scaler
 
-        print(f"  → 标准化 {original_col} → {scaled_col}")
-        print(f"     原始: mean={original_vals.mean():.4f}, std={original_vals.std():.4f}")
-        print(f"     标准化后: mean={scaled_vals.mean():.6f}, std={scaled_vals.std():.6f}")
+        print(f"  → Standardized {original_col} → {scaled_col}")
+        print(f"     Original: mean={original_vals.mean():.4f}, std={original_vals.std():.4f}")
+        print(f"     Standardized: mean={scaled_vals.mean():.6f}, std={scaled_vals.std():.6f}")
 
-    # 获取最终的特征列名（只有_scaled列）
+    # Obtain final feature column names (only _scaled columns)
     scaled_columns = normalized_df.columns.tolist()
-    print(f"\n标准化后的列名（只包含_scaled列）: {scaled_columns}")
+    print(f"\nNormalized column names (only _scaled columns): {scaled_columns}")
 
-    final_df = normalized_df[scaled_columns]  # 确保只保留_scaled列
+    final_df = normalized_df[scaled_columns]  # ensure only _scaled columns are kept
 
-    print("\n标准化后数据统计（只包含_scaled列）:")
+    print("\nStatistics after standardization (only _scaled columns):")
     for col in scaled_columns:
         print(f"  {col}: mean={final_df[col].mean():.6f}, std={final_df[col].std():.6f}")
 
-    # 4. 创建滑动窗口
+    # 4. Create sliding windows
     def create_sliding_windows(data, window_size, stride=1, horizon=0):
-        """创建3D滑动窗口数组: (n_samples, window_size, n_features)"""
+        """Create 3D sliding window array: (n_samples, window_size, n_features)"""
         X = []
         y = [] if horizon > 0 else None
 
@@ -155,9 +155,9 @@ def main():
 
         return X, y
 
-    print(f"\n4. 创建滑动窗口 (window_size={WINDOW_SIZE}, stride={STRIDE})...")
+    print(f"\n4. Creating sliding windows (window_size={WINDOW_SIZE}, stride={STRIDE})...")
 
-    # 使用标准化后的特征值（只使用带_scaled后缀的列）
+    # Use normalized feature values (only columns with _scaled suffix)
     data_array = final_df[scaled_columns].values
 
     X_windows, y_windows = create_sliding_windows(
@@ -167,15 +167,15 @@ def main():
         horizon=PREDICTION_HORIZON
     )
 
-    print(f"窗口数据形状: {X_windows.shape}")  # (n_windows, timesteps, n_features)
+    print(f"Window data shape: {X_windows.shape}")  # (n_windows, timesteps, n_features)
 
     if y_windows is not None:
-        print(f"目标数据形状: {y_windows.shape}")
+        print(f"Target data shape: {y_windows.shape}")
 
-    # 5. 保存处理后的数据
-    print("\n5. 保存处理后的数据...")
+    # 5. Save processed data
+    print("\n5. Saving processed data...")
 
-    # 保存窗口数据
+    # Save window data
     np.save(os.path.join(OUTPUT_DIR, "X_windows.npy"), X_windows)
     print(f"  → {OUTPUT_DIR}/X_windows.npy")
 
@@ -183,44 +183,44 @@ def main():
         np.save(os.path.join(OUTPUT_DIR, "y_windows.npy"), y_windows)
         print(f"  → {OUTPUT_DIR}/y_windows.npy")
 
-    # 保存标准化后的小时数据（只包含_scaled列）
+    # Save normalized hourly data (only _scaled columns)
     final_df.to_csv(os.path.join(OUTPUT_DIR, "normalized_hourly_data.csv"))
     print(f"  → {OUTPUT_DIR}/normalized_hourly_data.csv")
-    print(f"  文件包含的列: {final_df.columns.tolist()}")
+    print(f"  File contains columns: {final_df.columns.tolist()}")
 
-    # 保存标准化器
+    # Save scalers
     import joblib
     for col, scaler in scalers.items():
         joblib.dump(scaler, os.path.join(OUTPUT_DIR, f"scaler_{col}.pkl"))
         print(f"  → {OUTPUT_DIR}/scaler_{col}.pkl")
 
-    # 保存所有标准化器的集合
+    # Save all scalers in one file
     joblib.dump(scalers, os.path.join(OUTPUT_DIR, "all_scalers.pkl"))
     print(f"  → {OUTPUT_DIR}/all_scalers.pkl")
 
-    # 6. 数据统计信息
+    # 6. Data statistics
     print("\n" + "=" * 80)
-    print("数据预处理完成！")
+    print("Data preprocessing completed!")
     print("=" * 80)
 
     n_windows = X_windows.shape[0]
     n_hourly = final_df.shape[0]
 
-    print(f"\n📊 数据统计:")
-    print(f"  原始小时数据: {n_hourly:,} 小时")
-    print(f"  创建的窗口数: {n_windows:,} 个24小时窗口")
-    print(f"  窗口形状: {X_windows.shape}")
-    print(f"  特征数量: {X_windows.shape[2]}")
-    print(f"  使用的特征列（只包含_scaled列）: {scaled_columns}")
+    print(f"\n📊 Data statistics:")
+    print(f"  Original hourly data: {n_hourly:,} hours")
+    print(f"  Number of windows created: {n_windows:,} (24-hour windows)")
+    print(f"  Window shape: {X_windows.shape}")
+    print(f"  Number of features: {X_windows.shape[2]}")
+    print(f"  Feature columns used (only _scaled columns): {scaled_columns}")
 
-    # 窗口数据统计
-    print(f"\n📊 窗口数据统计:")
-    print(f"  最小值: {X_windows.min():.6f}")
-    print(f"  最大值: {X_windows.max():.6f}")
-    print(f"  均值: {X_windows.mean():.6f}")
-    print(f"  标准差: {X_windows.std():.6f}")
+    # Window data statistics
+    print(f"\n📊 Window data statistics:")
+    print(f"  Min: {X_windows.min():.6f}")
+    print(f"  Max: {X_windows.max():.6f}")
+    print(f"  Mean: {X_windows.mean():.6f}")
+    print(f"  Std: {X_windows.std():.6f}")
 
-    # 创建元数据文件
+    # Create metadata file
     metadata = {
         "source_data": "mixed_dataset_hourly_35040.csv",
         "preprocessing_date": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -250,7 +250,7 @@ def main():
                             "normalized_hourly_data.csv",
                             "all_scalers.pkl"
                         ] + [f"scaler_{col}.pkl" for col in scalers.keys()],
-        "note": "normalized_hourly_data.csv只包含标准化后的_scaled列，不包含原始特征列"
+        "note": "normalized_hourly_data.csv contains only normalized _scaled columns, not original feature columns"
     }
 
     import json
@@ -258,22 +258,20 @@ def main():
     with open(metadata_path, 'w', encoding='utf-8') as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-    print(f"\n💾 元数据文件: {metadata_path}")
+    print(f"\n💾 Metadata file: {metadata_path}")
 
-    # 显示CSV文件内容预览
-    print("\n📋 标准化后CSV文件前5行预览（只包含_scaled列）:")
+    # Show preview of CSV file content
+    print("\n📋 Preview of normalized CSV file (first 5 rows, only _scaled columns):")
     print(final_df.head().to_string())
 
-    print("\n📋 CSV文件列名:")
+    print("\n📋 CSV file column names:")
     for i, col in enumerate(final_df.columns, 1):
         print(f"  {i}. {col}")
 
-    print("\n✅ 预处理完成！")
-    print(f"📍 文件保存在: {OUTPUT_DIR}")
-
-    
+    print("\n✅ Preprocessing completed!")
+    print(f"📍 Files saved in: {OUTPUT_DIR}")
 
 
-# ==================== 运行脚本 ====================
+# ==================== Run script ====================
 if __name__ == "__main__":
     main()
