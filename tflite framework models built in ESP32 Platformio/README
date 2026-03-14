@@ -1,1 +1,2 @@
-
+convert_h5_to_tflite.py： convert Conv_AE model to tensorflow lite framework
+convert_unrolled.py: convert LSTM_AE model to tensorflow lite framework
